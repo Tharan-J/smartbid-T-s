@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pymupdf
+fpdf
+networkx
+numpy
+google-generativeai
+langchain-google-genai
+langchain-core
+langchain-community
+langgraph
+python-multipart
+python-dotenv
+aiofiles
