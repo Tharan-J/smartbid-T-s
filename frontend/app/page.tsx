@@ -88,6 +88,7 @@ function Navbar() {
 
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600 dark:text-slate-400">
           <a href="#product" className="hover:text-black dark:hover:text-white transition-colors">Product</a>
+          <Link href="/about" className="hover:text-black dark:hover:text-white transition-colors">How it Works</Link>
           <a href="#solutions" className="hover:text-black dark:hover:text-white transition-colors">Solutions</a>
           <a href="#pricing" className="hover:text-black dark:hover:text-white transition-colors">Pricing</a>
           <a href="#company" className="hover:text-black dark:hover:text-white transition-colors">Company</a>
@@ -120,6 +121,7 @@ function Navbar() {
           >
             <div className="flex flex-col p-6 gap-4 font-medium text-slate-600 dark:text-slate-400">
               <a href="#product" onClick={() => setMobileMenuOpen(false)}>Product</a>
+              <Link href="/about" onClick={() => setMobileMenuOpen(false)}>How it Works</Link>
               <a href="#solutions" onClick={() => setMobileMenuOpen(false)}>Solutions</a>
               <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)} className="text-blue-600 dark:text-blue-400">Sign In</Link>
             </div>
