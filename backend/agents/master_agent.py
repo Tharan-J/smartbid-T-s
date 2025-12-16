@@ -8,7 +8,7 @@ def master_agent(state: AgentState) -> dict:
     The Conductor / Master Agent.
     Orchestrates the workflow based on the current 'master_phase'.
     """
-    print(f"--- MASTER AGENT (Phase: {state.get('master_phase', 'init')}) ---")
+    print(f"--- MASTER AGENT (Phase: {state.get('master_phase', 'init')}) ---", flush=True)
     
     phase = state.get("master_phase", "init")
     llm = get_gemini_model()
@@ -20,7 +20,7 @@ def master_agent(state: AgentState) -> dict:
         if not state.get("is_qualified"):
             return {}
 
-        print("Master Agent: Generating Role-Specific Contexts...")
+        print("Master Agent: Generating Role-Specific Contexts...", flush=True)
         
         # A. Technical Summary Generation
         tech_prompt = ChatPromptTemplate.from_template(
@@ -151,7 +151,7 @@ def master_agent(state: AgentState) -> dict:
 
     # 2. POST-TECHNICAL PHASE: Review Tech Output, dispatch to Pricing
     elif phase == "tech_dispatched":
-        print("Master Agent: Reviewed Technical Output. Dispatching to Pricing...")
+        print("Master Agent: Reviewed Technical Output. Dispatching to Pricing...", flush=True)
         return {
             "master_phase": "pricing_dispatched",
             "status_updates": ["Master Agent: Technical review complete. Dispatching to Pricing Agent."]
@@ -159,7 +159,7 @@ def master_agent(state: AgentState) -> dict:
 
     # 3. POST-PRICING PHASE: Consolidate and Report
     elif phase == "pricing_dispatched":
-        print("Master Agent: Consolidating Final Report...")
+        print("Master Agent: Consolidating Final Report...", flush=True)
         
         # --- Aggregating Data from State ---
         sales_data = state.get("sales_agent_output", {}) # has rfp_discovery, qualified_rfps

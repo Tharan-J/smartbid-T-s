@@ -12,12 +12,12 @@ def pricing_agent(state: AgentState) -> dict:
     """
     Calculates the detailed pricing for the matched products.
     """
-    print("--- PRICING AGENT WORKING ---")
+    print("--- PRICING AGENT WORKING ---", flush=True)
     try:
         ctx = state.get('pricing_summary', 'None')
-        print(f"Context: {str(ctx)[:50]}...")
+        print(f"Context: {str(ctx)[:50]}...", flush=True)
     except:
-        print("Context: Error printing context")
+        print("Context: Error printing context", flush=True)
     
     if not state.get("is_qualified"):
         return {"status_updates": ["Pricing Agent: Skipping (Not Qualified)."]}
@@ -158,7 +158,7 @@ def pricing_agent(state: AgentState) -> dict:
             "status_updates": ["Pricing Agent: Detailed costs calculated."]
         }
     except Exception as e:
-        print(f"PRICING AGENT ERROR: {str(e)}")
+        print(f"PRICING AGENT ERROR: {str(e)}", flush=True)
         return {
             "pricing_agent_output": {"material_pricing": []},
             "testing_pricing": [],

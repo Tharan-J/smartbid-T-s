@@ -15,7 +15,7 @@ def technical_agent(state: AgentState) -> dict:
     """
     Extracts technical requirements and matches them to internal products.
     """
-    print("--- TECHNICAL AGENT WORKING ---")
+    print("--- TECHNICAL AGENT WORKING ---", flush=True)
     
     if not state.get("is_qualified"):
         return {"status_updates": ["Technical Agent: Skipping (Not Qualified)."]}
@@ -168,7 +168,7 @@ def technical_agent(state: AgentState) -> dict:
             "status_updates": ["Technical Agent: 3-SKU comparison generated."]
         }
     except Exception as e:
-        print(f"TECHNICAL AGENT ERROR: {str(e)}")
+        print(f"TECHNICAL AGENT ERROR: {str(e)}", flush=True)
         # Fallback structure
         return {
             "technical_agent_output": {"scope_of_supply": []},
