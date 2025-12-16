@@ -14,7 +14,7 @@ def get_gemini_model():
         return None
         
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",
+        model="gemini-2.0-flash-lite",
         temperature=0.2, # Low temp for factual extraction
         google_api_key=api_key,
         convert_system_message_to_human=True

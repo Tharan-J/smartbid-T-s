@@ -161,109 +161,148 @@ def master_agent(state: AgentState) -> dict:
     elif phase == "pricing_dispatched":
         print("Master Agent: Consolidating Final Report...")
         
-        # --- LOGIC MOVED FROM REPORTING AGENT ---
-        # 1. RFP SUMMARY
-        report = "--------------------------------\n"
-        report += "SMARTBID.AI FINAL RESPONSE\n"
-        report += "--------------------------------\n\n"
+        # --- Aggregating Data from State ---
+        sales_data = state.get("sales_agent_output", {}) # has rfp_discovery, qualified_rfps
+        tech_data = state.get("technical_agent_output", {}) # has scope_of_supply
+        sku_recs = state.get("sku_recommendations", [])
+        pricing_summary_data = state.get("pricing_summary", {})
         
-        report += f"Project Name:\n{state.get('project_title', 'Not specified')}\n\n"
-        report += f"Issuing Authority:\n{state.get('client_name', 'Not specified')}\n\n"
-        report += f"RFP Reference Number:\n{state.get('rfp_ref_number', 'Not specified')}\n\n"
-        report += f"Submission Deadline:\n{state.get('submission_deadline', 'Not specified')}\n\n"
+        # 1. Master Envelope - RFP Metadata
+        # Try to get from Sales data first
+        qualified_rfps = sales_data.get("qualified_rfps", [])
+        selected_rfp = qualified_rfps[0] if qualified_rfps else {}
         
-        report += "Products in Scope:\n"
-        for prod in state.get('products_in_scope', []):
-            report += f"- {prod}\n"
+        rfp_meta = {
+            "source": "PSU Tender Portal (Mock)", # Mock source
+            "source_url": "https://psu-tenders.gov.in/rfp-mock",
+            "issue_date": "2026-01-15", # Mock
+            "submission_due_date": selected_rfp.get("due_date", state.get("submission_deadline", "Unknown")),
+            "days_remaining": 62, # Mock calc or date diff
+            "project_type": "Infrastructure - Power Transmission",
+            "priority": "HIGH" if state.get("is_qualified") else "LOW"
+        }
+        
+        # 2. Pipeline Status
+        pipeline_status = {
+            "sales_agent": "COMPLETED",
+            "technical_agent": "COMPLETED",
+            "pricing_agent": "COMPLETED",
+            "master_agent": "COMPLETED"
+        }
+        
+        # 3. Final RFP Response Body
+        # A. Recommended Products
+        rec_products = []
+        for item in sku_recs:
+            rec_products.append({
+                "rfp_product_id": item.get("rfp_product_id"),
+                "final_oem_sku": item.get("final_selected_sku"),
+                "spec_match_percentage": item.get("recommended_skus", [{}])[0].get("spec_match_percentage", 0)
+            })
+            
+        # B. Pricing
+        total_val = pricing_summary_data.get("grand_total_bid_value_inr", state.get("total_bid_value", 0))
+        
+        # C. Confidence Score (Logic based on tech match)
+        tech_confidence = "HIGH"
+        min_match = 100
+        for p in rec_products:
+            if p["spec_match_percentage"] < 70:
+                tech_confidence = "LOW"
+            elif p["spec_match_percentage"] < 90:
+                tech_confidence = "MEDIUM"
+            if p["spec_match_percentage"] < min_match:
+                min_match = p["spec_match_percentage"]
+                
+        final_response_body = {
+            "selected_oem": "Velora Cables Ltd.", # Mock Client Name
+            "recommended_products": rec_products,
+            "pricing": {
+                "currency": "INR",
+                "total_bid_value": total_val
+            },
+            "confidence_score": {
+                "technical_fit": tech_confidence,
+                "pricing_competitiveness": "MEDIUM", # Placeholder
+                "submission_readiness": "READY" if tech_confidence != "LOW" else "REVIEW REQUIRED"
+            }
+        }
+        
+        # --- Generate Text Report (Keep for PDF compatibility) ---
+        # This text becomes the content of the PDF.
+        report = "SMARTBID.AI - FINAL RFP ANALYSIS REPORT\n"
+        report += "="*40 + "\n\n"
+        
+        # 1. Executive Summary
+        report += "1. EXECUTIVE SUMMARY\n"
+        report += "-"*20 + "\n"
+        report += f"Project: {rfp_meta.get('project_type')}\n"
+        report += f"Client: {selected_rfp.get('client_name', 'Unknown')}\n"
+        report += f"Confidence Score: {tech_confidence}\n"
+        report += f"Bid Readiness: {final_response_body['confidence_score']['submission_readiness']}\n\n"
+
+        # 2. RFP Overview
+        report += "2. RFP OVERVIEW\n"
+        report += "-"*20 + "\n"
+        report += f"RFP ID: {selected_rfp.get('rfp_id', 'N/A')}\n"
+        report += f"Project Title: {selected_rfp.get('project_title', 'N/A')}\n"
+        report += f"Due Date: {selected_rfp.get('due_date', 'N/A')}\n"
+        report += f"Qualification Status: {'QUALIFIED' if state.get('is_qualified') else 'DISQUALIFIED'}\n"
+        report += f"Reason: {state.get('qualification_reason', 'N/A')}\n\n"
+
+        # 3. Technical Solution
+        report += "3. TECHNICAL SOLUTION\n"
+        report += "-"*20 + "\n"
+        if 'technical_agent_output' in state:
+             scope = state['technical_agent_output'].get('scope_of_supply', [])
+             if scope:
+                 report += "Scope of Supply:\n"
+                 for item in scope:
+                     report += f" - {item.get('product_description')} (Qty: {item.get('quantity')})\n"
+                     report += f"   Standards: {', '.join(item.get('standards', []))}\n"
+             else:
+                 report += "No scope extracted.\n"
         report += "\n"
-
-        # 2. TECHNICAL SECTION
-        report += "--------------------------------\n"
-        report += "TECHNICAL PROPOSAL\n"
-        report += "--------------------------------\n"
         
-        matched = state.get('matched_products', [])
-        for idx, item in enumerate(matched, 1):
-            p_name = item.get('rfp_product_name', f'Product {idx}')
-            report += f"Product {idx}: {p_name}\n"
-            report += f"Selected OEM SKU: {item.get('selected_sku', 'None')}\n"
-            
-            # Show top 3 comparison table briefly
-            top3 = item.get('top_3_skus', [])
-            if top3:
-                report += f"  Candidate SKUs comparison:\n"
-                for cand in top3:
-                    report += f"  - {cand.get('sku')} (Match: {cand.get('match_score')}%) - {cand.get('remarks')}\n"
-            report += "\n"
+        report += "Product Selection:\n"
+        for p in rec_products:
+             report += f"Ref ID: {p['rfp_product_id']}\n"
+             report += f"Selected SKU: {p['final_oem_sku']}\n"
+             report += f"Spec Match: {p['spec_match_percentage']}%\n"
+             if p['spec_match_percentage'] < 100:
+                 report += "   WARNING: Partial match. Check conformance params.\n"
+             report += "\n"
 
-        # 3. PRICING SECTION
-        report += "--------------------------------\n"
-        report += "COMMERCIAL PROPOSAL\n"
-        report += "--------------------------------\n"
+        # 4. Commercial Summary
+        report += "4. COMMERCIAL SUMMARY\n"
+        report += "-"*20 + "\n"
+        report += f"Total Bid Value: INR {total_val:,.2f}\n\n"
         
-        line_items = state.get('pricing_line_items', [])
-        for item in line_items:
-            report += f"Item: {item.get('product_name')} (SKU: {item.get('sku')})\n"
-            report += f"  Qty: {item.get('qty')} | Unit Price: ${item.get('unit_price'):,.2f}\n"
-            report += f"  Mat. Cost: ${item.get('material_cost'):,.2f} | Test Cost: ${item.get('testing_cost'):,.2f}\n"
-            report += f"  Line Total: ${item.get('total_cost'):,.2f}\n\n"
-            
-        total_val = state.get('total_bid_value', 0)
-        report += f"GRAND TOTAL BID VALUE: ${total_val:,.2f}\n\n"
-
-        # 4. MASTER AGENT SIGN-OFF
-        report += "--------------------------------\n"
-        report += "EXECUTIVE SUMMARY\n"
-        report += "--------------------------------\n"
-
-        # --- Compliance evaluation ---
-        technical_status = "Fully Compliant"
-        bid_readiness = "Auto-Submittable"
-        compliance_issues = []
-
-        for item in matched:
-            selected = item.get("selected_sku")
-            for cand in item.get("top_3_skus", []):
-                if cand.get("sku") == selected:
-                    score = cand.get("match_score", 0)
-                    remarks = cand.get("remarks", "").lower()
-                    
-                    if not selected or selected == "None":
-                        technical_status = "Not Compliant"
-                        bid_readiness = "Do Not Bid"
-                        compliance_issues.append(f"{item.get('rfp_product_name')}: No suitable SKU found.")
-                        
-                    elif score < 70 or "missing" in remarks:
-                        if technical_status != "Not Compliant":
-                            technical_status = "Partially Compliant"
-                            bid_readiness = "Requires Management Decision"
-                        compliance_issues.append(
-                            f"{item.get('rfp_product_name')} (SKU: {selected}): {cand.get('remarks')} (Match: {score}%)"
-                        )
-
-        if technical_status == "Fully Compliant":
-            report += (
-                "This bid is technically compliant with the RFP requirements "
-                "and commercially estimated based on standard rates.\n"
-                "Ready for internal review and submission.\n"
-            )
-        else:
-            report += (
-                f"This bid is {technical_status.upper()}.\n"
-                "The following deviations or gaps were identified:\n"
-            )
-            for issue in compliance_issues:
-                report += f"- {issue}\n"
-            report += (
-                "\nCommercial pricing has been provided for estimation purposes only.\n"
-                f"Status: {bid_readiness}\n"
-            )
+        if 'pricing_agent_output' in state:
+            mat_pricing = state['pricing_agent_output'].get('material_pricing', [])
+            if mat_pricing:
+                report += "Material Costs:\n"
+                for mp in mat_pricing:
+                    report += f" - {mp.get('oem_sku')}: {mp.get('quantity')} units @ INR {mp.get('unit_price_inr')} = INR {mp.get('total_price_inr'):,.2f}\n"
+        
+        report += "\n" + "="*40 + "\n"
+        report += "END OF REPORT\n"
 
         return {
             "master_phase": "done",
+            
+            # New Structured Keys
+            "rfp_id": selected_rfp.get("rfp_id", "RFP-UNKNOWN"),
+            "rfp_metadata": rfp_meta,
+            "agent_pipeline_status": pipeline_status,
+            "final_rfp_response": final_response_body,
+            
+            # Legacy/PDF Report
             "final_proposal_summary": report,
-            "technical_status": technical_status,
-            "bid_readiness_status": bid_readiness,
+            
+            "technical_status": "Fully Compliant" if tech_confidence == "HIGH" else "Partially Compliant",
+            "bid_readiness_status": final_response_body["confidence_score"]["submission_readiness"],
+            
             "status_updates": ["Master Agent: Final Consolidated Report Generated."]
         }
         

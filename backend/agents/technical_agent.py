@@ -32,68 +32,90 @@ def technical_agent(state: AgentState) -> dict:
         You deal with the following RFP Context provided by the Master Agent:
         {technical_summary}
 
-================================
-PRIMARY RESPONSIBILITIES
-================================
+        ================================
+        PRIMARY RESPONSIBILITIES
+        ================================
 
-1. STRICT SPEC EXTRACTION
-- Extract ONLY specs explicitly stated in the RFP
-- Mandatory specs include:
-  - Voltage
-  - Conductor material
-  - Insulation type
-  - Armouring
-  - Referenced standards (IS / IEC)
+        1. STRICT SPEC EXTRACTION
+        - Extract ONLY specs explicitly stated in the RFP
+        - Mandatory specs include:
+        - Voltage
+        - Conductor material
+        - Insulation type
+        - Armouring
+        - Referenced standards (IS / IEC)
 
-2. SPEC MATCH SCORING (STRICT)
-- All mandatory specs carry equal weight
-- Missing ANY mandatory spec must reduce score
-- Match score <70% indicates HIGH TECHNICAL RISK
+        2. SPEC MATCH SCORING (STRICT)
+        - All mandatory specs carry equal weight
+        - Missing ANY mandatory spec must reduce score
+        - Match score <70% indicates HIGH TECHNICAL RISK
 
-3. SKU SELECTION RULES
-- Select best SKU ONLY if it meets:
-  - Voltage
-  - Conductor material
-- If no SKU meets mandatory specs:
-  - Still select best available
-  - BUT clearly mark as “Partial / Non-Compliant”
+        3. SKU SELECTION RULES
+        - Select best SKU ONLY if it meets:
+        - Voltage
+        - Conductor material
+        - If no SKU meets mandatory specs:
+        - Still select best available
+        - BUT clearly mark as “Partial / Non-Compliant”
 
-4. REMARKS MUST INCLUDE
-- Explicit list of missing specs
-- Compliance gaps
-- Risk severity
+        4. REMARKS MUST INCLUDE
+        - Explicit list of missing specs
+        - Compliance gaps
+        - Risk severity
 
-================================
-================================
-OUTPUT RULES (CRITICAL)
-================================
+        ================================
+        ================================
+        OUTPUT CONTRACT (CRITICAL)
+        ================================
 
-You MUST return a VALID JSON object (and nothing else) with this exact schema:
+        You MUST return a VALID JSON object (and nothing else) with this exact schema:
 
-{{
-    "matched_products": [
-    {{
-        "rfp_product_name": string,
-        "key_specs": {{ "SpecName": "Value" }},
-        "top_3_skus": [
         {{
-            "sku": string,
-            "match_score": number,
-            "remarks": string
-        }}
+        "technical_agent_output": {{
+            "scope_of_supply": [
+            {{
+                "rfp_product_id": "RFP-PROD-01",
+                "product_description": string,
+                "quantity": string,
+                "standards": [string],
+                "application": string
+            }}
+            ]
+        }},
+        "sku_recommendations": [
+            {{
+            "rfp_product_id": "RFP-PROD-01",
+            "evaluated_parameters_count": number,
+            "recommended_skus": [
+                {{
+                "oem_sku": string,
+                "spec_match_percentage": number,
+                "matching_parameters": number,
+                "non_matching_parameters": number,
+                "remarks": string,
+                "rank": number
+                }}
+            ],
+            "final_selected_sku": string
+            }}
         ],
-        "selected_sku": string,
-        "estimated_qty": number
-    }}
-    ]
-}}
+        "spec_comparison_table": [
+            {{
+            "parameter": string,
+            "rfp_requirement": string,
+            "sku_1": string,
+            "sku_2": string,
+            "sku_3": string
+            }}
+        ]
+        }}
 
-- NO conversational text before or after the JSON.
-- NO markdown formatting (like ```json).
-- The JSON must be strictly valid.
+        - NO conversational text before or after the JSON.
+        - NO markdown formatting (like ```json).
+        - The JSON must be strictly valid.
 
-Product Catalog: {catalog}
-RFP Snippet: {rfp_text}
+        Product Catalog: {catalog}
+        RFP Snippet: {rfp_text}
         """
     )
     
@@ -106,12 +128,52 @@ RFP Snippet: {rfp_text}
             "technical_summary": state.get("technical_summary", "")
         })
         
+        # --- Legacy Mapper for Global State compatibility ---
+        # We need to map the new structure back to 'matched_products' so Pricing agent (if not updated yet) and Master (if not updated) can still work temporarily
+        # PRO TIP: We will update Pricing agent next, but it's good practice.
+        
+        legacy_matched_products = []
+        sku_recs = result.get("sku_recommendations", [])
+        scope_map = { item.get("rfp_product_id"): item for item in result.get("technical_agent_output", {}).get("scope_of_supply", []) }
+        
+        for item in sku_recs:
+            pid = item.get("rfp_product_id")
+            scope_info = scope_map.get(pid, {})
+            
+            # Map top 3 skus
+            top_3 = []
+            for sku in item.get("recommended_skus", []):
+                top_3.append({
+                    "sku": sku.get("oem_sku"),
+                    "match_score": sku.get("spec_match_percentage"),
+                    "remarks": sku.get("remarks", "No remarks")
+                })
+            
+            legacy_matched_products.append({
+                "rfp_product_name": scope_info.get("product_description", "Unknown Product"),
+                "key_specs": {"Standard": str(scope_info.get("standards", []))},
+                "top_3_skus": top_3,
+                "selected_sku": item.get("final_selected_sku"),
+                "estimated_qty": scope_info.get("quantity", "0")
+            })
+
         return {
-            "matched_products": result.get("matched_products") or [],
+            "technical_agent_output": result.get("technical_agent_output") or {"scope_of_supply": []},
+            "sku_recommendations": result.get("sku_recommendations") or [],
+            "spec_comparison_table": result.get("spec_comparison_table") or [],
+            
+            # Legacy field populated from new data
+            "matched_products": legacy_matched_products,
+            
             "status_updates": ["Technical Agent: 3-SKU comparison generated."]
         }
     except Exception as e:
+        print(f"TECHNICAL AGENT ERROR: {str(e)}")
+        # Fallback structure
         return {
+            "technical_agent_output": {"scope_of_supply": []},
+            "sku_recommendations": [],
+            "spec_comparison_table": [],
             "matched_products": [],
             "status_updates": [f"Technical Agent: Error - {str(e)}"]
         }

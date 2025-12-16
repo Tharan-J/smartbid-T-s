@@ -39,6 +39,11 @@ class PDFRequest(BaseModel):
     report_text: str
     filename: str = "SmartBid_Report.pdf"
 
+class ChatRequest(BaseModel):
+    query: str
+    rfp_context: str
+    agent_data: Dict[str, Any]
+
 @app.post("/generate-pdf-from-text")
 def generate_pdf_from_text(request: PDFRequest):
     pdf = FPDF()
@@ -83,6 +88,9 @@ async def analyze_rfp_stream(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Invalid PDF: {str(e)}")
 
     async def event_generator():
+        # 0. Send Context immediately
+        yield f"data: {json.dumps({'type': 'context', 'rfp_text': text})}\n\n"
+
         # Initialize state
         initial_state = AgentState(
             rfp_text=text,
@@ -102,7 +110,18 @@ async def analyze_rfp_stream(file: UploadFile = File(...)):
             matched_products=[],
             pricing_line_items=[],
             total_bid_value=0.0,
-            final_proposal_summary=""
+            final_proposal_summary="",
+            
+            # New Keys Initialization
+            sales_agent_output={},
+            technical_agent_output={},
+            sku_recommendations=[],
+            spec_comparison_table=[],
+            pricing_agent_output={},
+            testing_pricing=[],
+            rfp_metadata={},
+            agent_pipeline_status={},
+            final_rfp_response={}
         )
 
         try:
@@ -116,6 +135,7 @@ async def analyze_rfp_stream(file: UploadFile = File(...)):
                         yield f"data: {json.dumps({'type': 'status', 'agent': agent_name, 'message': latest_msg})}\n\n"
                     
                     # Yield partial results if needed
+                    print(f"DEBUG STREAM: Yielding {agent_name} with keys: {list(state_update.keys())}")
                     yield f"data: {json.dumps({'type': 'chunk', 'agent': agent_name, 'data': state_update})}\n\n"
             
             # Send Final Result signal
@@ -129,16 +149,67 @@ async def analyze_rfp_stream(file: UploadFile = File(...)):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-# --- OLD MOCK ENDPOINTS (KEPT FOR REFERENCE/COMPATIBILITY IF NEEDED) ---
-
-MOCK_RFPS = [
-    {"id": "1", "title": "Supply of High-Performance Laptops", "client": "Dept of Education", "budget": "$500,000"},
-    {"id": "2", "title": "Cloud Migration", "client": "City Transport", "budget": "$1.2M"},
-]
-
 @app.get("/rfps")
 def get_rfps():
     return MOCK_RFPS
+
+@app.post("/chat")
+async def chat_with_velora(request: ChatRequest):
+    """
+    Chat endpoint for Velora (RFP Assistant).
+    """
+    from utils import get_gemini_model
+    llm = get_gemini_model()
+    if not llm:
+        print("GEMINI API KEY MISSING in /chat")
+        raise HTTPException(status_code=500, detail="Gemini API Key missing")
+    
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.output_parsers import StrOutputParser
+
+    prompt = ChatPromptTemplate.from_template(
+        """
+        You are Velora, the intelligent AI assistant for SmartBid.AI.
+        
+        **ROLE & GOAL:**
+        You are a high-level RFP analyst assistant. Your goal is to provide **clear, professional, and concise** answers to the user's questions based strictly on the RFP document and the agent analysis provided below.
+        
+        **CONTEXT:**
+        1. **RFP TEXT**: The raw content of the tender document.
+        2. **AGENT OUTPUTS**: Analysis from specialized agents (Sales, Technical, Pricing, Master).
+        
+        **GUIDELINES:**
+        - **Format**: Use **Markdown** for clarity (bolding key terms, lists for multiple points).
+        - **Tone**: Professional, confident, and direct. Avoid chatting fluff.
+        - **Accuracy**: Cite the "Agent Outputs" or "RFP Text" explicitly when providing facts.
+        - **Unknowns**: If the answer is not in the context, state: "I cannot find that information in the provided documents." Do not hallucinate.
+        
+        **CONTEXT DATA:**
+        RFP Snippet (First 15k chars):
+        {rfp_context}
+        
+        Agent Analysis Data:
+        {agent_data}
+        
+        **USER QUESTION:**
+        {query}
+        """
+    )
+
+    chain = prompt | llm | StrOutputParser()
+    
+    try:
+        # Truncate context if too huge, but 15k is usually fine for Gemini-1.5-Flash window
+        snippet = request.rfp_context[:15000] if request.rfp_context else ""
+        response = chain.invoke({
+            "rfp_context": snippet,
+            "agent_data": request.agent_data,
+            "query": request.query
+        })
+        return {"response": response}
+    except Exception as e:
+        print(f"Chat Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

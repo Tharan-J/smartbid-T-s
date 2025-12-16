@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Upload, FileText, CheckCircle2, AlertTriangle, ArrowRight, Bot, Terminal, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
+import VeloraChat from "../../../components/VeloraChat";
 
 export default function NewRFPAnalysisPage() {
     const [file, setFile] = useState<File | null>(null);
@@ -12,6 +13,7 @@ export default function NewRFPAnalysisPage() {
     const [logs, setLogs] = useState<{ agent: string, message: string, timestamp: string }[]>([]);
     const [result, setResult] = useState<any>(null);
     const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+    const [rfpFullText, setRfpFullText] = useState<string | null>(null);
     const logsEndRef = useRef<HTMLDivElement>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -26,6 +28,7 @@ export default function NewRFPAnalysisPage() {
         setIsAnalyzing(true);
         setLogs([]);
         setResult(null);
+        setRfpFullText(null);
         setCurrentAgent("Orchestrator");
 
         const formData = new FormData();
@@ -54,7 +57,9 @@ export default function NewRFPAnalysisPage() {
                         try {
                             const data = JSON.parse(line.slice(6));
                             
-                            if (data.type === "status") {
+                            if (data.type === "context") {
+                                setRfpFullText(data.rfp_text);
+                            } else if (data.type === "status") {
                                 setLogs(prev => [...prev, { 
                                     agent: data.agent, 
                                     message: data.message, 
@@ -122,6 +127,42 @@ export default function NewRFPAnalysisPage() {
             alert("Error downloading PDF");
         }
     };
+
+    // --- New State for Click Interactions ---
+    const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+
+    // --- Helper to get data for specific agent ---
+    const getAgentData = (agent: string) => {
+        if (!result) return null;
+        switch (agent) {
+            case "Sales Agent":
+                return result.sales_agent_output || { status: "Pending", is_qualified: result.is_qualified };
+            case "Technical Agent":
+                return result.technical_agent_output ? {
+                    technical_agent_output: result.technical_agent_output,
+                    sku_recommendations: result.sku_recommendations,
+                    spec_comparison: result.spec_comparison_table
+                } : null;
+            case "Pricing Agent":
+                return result.pricing_agent_output ? {
+                    pricing_agent_output: result.pricing_agent_output,
+                    pricing_summary: result.pricing_summary
+                } : null;
+            case "Master Agent":
+                return result.final_rfp_response ? {
+                    overall_response_envelope: {
+                        rfp_id: result.rfp_id,
+                        rfp_metadata: result.rfp_metadata,
+                        agent_pipeline_status: result.agent_pipeline_status,
+                    },
+                    final_rfp_response: result.final_rfp_response
+                } : null;
+            default:
+                return null;
+        }
+    };
+
+    const activeData = selectedAgent ? getAgentData(selectedAgent) : (result?.final_rfp_response || result);
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-black text-slate-900 dark:text-white p-6 font-sans">
@@ -244,7 +285,7 @@ export default function NewRFPAnalysisPage() {
                     </div>
                 </div>
 
-                {/* Right Panel: Result Preview */}
+                {/* Right Panel: Result Preview (Redesigned) */}
                 <div className="space-y-6">
                     {result ? (
                         <motion.div
@@ -252,106 +293,82 @@ export default function NewRFPAnalysisPage() {
                             animate={{ opacity: 1, scale: 1 }}
                             className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl"
                         >
-                            <div className="bg-emerald-500/10 border-b border-emerald-500/20 p-6">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <Badge check>Analysis Active</Badge>
-                                        <span className="text-xs font-bold text-emerald-500 uppercase tracking-wider">Live Updates</span>
-                                    </div>
-                                    <span className="text-xs text-slate-400 font-mono">{result.rfp_ref_number}</span>
+                            <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+                                <h2 className="text-lg font-bold mb-4">Agent Pipeline Output</h2>
+                                
+                                {/* Pipeline Cards (Clickable) */}
+                                <div className="grid grid-cols-4 gap-4">
+                                    {[
+                                        { name: "Sales Agent", color: "amber" },
+                                        { name: "Technical Agent", color: "blue" },
+                                        { name: "Pricing Agent", color: "emerald" },
+                                        { name: "Master Agent", color: "purple" }
+                                    ].map((agent) => (
+                                        <motion.div
+                                            key={agent.name}
+                                            onClick={() => setSelectedAgent(prev => prev === agent.name ? null : agent.name)}
+                                            className={`
+                                                relative p-4 rounded-xl border cursor-pointer transition-all select-none
+                                                ${selectedAgent === agent.name 
+                                                    ? `bg-${agent.color}-50 dark:bg-${agent.color}-900/20 border-${agent.color}-500 shadow-md ring-2 ring-${agent.color}-500/20` 
+                                                    : "bg-slate-50 dark:bg-slate-800 border-transparent hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                }
+                                            `}
+                                        >
+                                            <div className="text-xs uppercase font-bold text-slate-500 mb-1">Step</div>
+                                            <div className="text-sm font-bold leading-tight">{agent.name}</div>
+                                            
+                                            {/* Status Dot */}
+                                            <div className={`absolute top-3 right-3 w-2 h-2 rounded-full ${
+                                                // Simple logic for status colored dots
+                                                (agent.name === "Sales Agent" && result.sales_agent_output) ||
+                                                (agent.name === "Technical Agent" && result.technical_agent_output) ||
+                                                (agent.name === "Pricing Agent" && result.pricing_agent_output) ||
+                                                (agent.name === "Master Agent" && result.final_rfp_response)
+                                                ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                                            }`}></div>
+                                        </motion.div>
+                                    ))}
                                 </div>
-                                <h2 className="text-2xl font-bold dark:text-white leading-tight">
-                                    {result.project_title || "Identifying Project..."}
-                                </h2>
-                                <p className="text-sm text-slate-500 mt-1">
-                                    {result.client_name || "Identifying Client..."}
-                                </p>
                             </div>
                             
-                            <div className="p-8 space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 bg-slate-50 dark:bg-black rounded-xl border border-slate-200 dark:border-slate-800 md:col-span-2">
-                                        <div className="text-xs text-slate-500 uppercase font-bold mb-2">Scope of Supply</div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {result.products_in_scope && result.products_in_scope.length > 0 ? (
-                                                result.products_in_scope.map((prod: string, idx: number) => (
-                                                    <span key={idx} className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-md">
-                                                        {prod}
-                                                    </span>
-                                                ))
-                                            ) : (
-                                                <span className="text-sm text-slate-400 italic">Extracting scope...</span>
-                                            )}
-                                        </div>
+                            {/* JSON / Data Display Area */}
+                            <div className="p-0 bg-slate-950 min-h-[500px] border-t border-slate-800 font-mono text-xs overflow-hidden flex flex-col">
+                                <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-800">
+                                    <div className="text-slate-400">
+                                        Preview: <span className="text-blue-400 font-bold">{selectedAgent || "Final Master Output"}</span>
                                     </div>
-                                    
-                                    {/* Final Qualification Reason */}
-                                    {(result.final_proposal_summary || result.is_qualified === false) ? (
-                                        <div className="p-4 bg-slate-50 dark:bg-black rounded-xl border border-slate-200 dark:border-slate-800 md:col-span-2">
-                                            <div className="text-xs text-slate-500 uppercase font-bold mb-1">Final Qualification Reason</div>
-                                            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                                {result.qualification_reason || "No reason provided."}
-                                            </div>
-                                        </div>
+                                    <div className="flex gap-2">
+                                        <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50"></div>
+                                        <div className="w-3 h-3 rounded-full bg-amber-500/20 border border-amber-500/50"></div>
+                                        <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/50"></div>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-auto p-4 custom-scrollbar text-slate-300">
+                                    {activeData ? (
+                                        <pre>{JSON.stringify(activeData, null, 2)}</pre>
                                     ) : (
-                                        <div className="md:col-span-2 p-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center gap-2 text-slate-400">
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            <span className="text-sm">Evaluating Qualification...</span>
+                                        <div className="flex flex-col items-center justify-center h-full opacity-30 gap-2">
+                                            <Loader2 className="w-8 h-8 animate-spin" />
+                                            <p>Waiting for agent output...</p>
                                         </div>
-                                    )}
-
-                                    {(result.final_proposal_summary || result.is_qualified === false) ? (
-                                        <>
-                                            {/* 1. RFP Relevance Status */}
-                                            <div className="p-4 bg-slate-50 dark:bg-black rounded-xl border border-slate-200 dark:border-slate-800">
-                                                <div className="text-xs text-slate-500 uppercase font-bold">RFP Relevance</div>
-                                                <div className={`text-lg font-bold ${result.is_qualified ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                    {result.is_qualified ? "Relevant" : "Not Relevant"}
-                                                </div>
-                                            </div>
-
-                                            {/* 2. Technical Compliance Status */}
-                                            <div className="p-4 bg-slate-50 dark:bg-black rounded-xl border border-slate-200 dark:border-slate-800">
-                                                <div className="text-xs text-slate-500 uppercase font-bold">Technical Compliance</div>
-                                                <div className={`text-lg font-bold ${
-                                                    result.technical_status === 'Fully Compliant' ? 'text-emerald-500' : 
-                                                    result.technical_status === 'Partially Compliant' ? 'text-amber-500' : 'text-red-500'
-                                                }`}>
-                                                    {result.technical_status || "Pending"}
-                                                </div>
-                                            </div>
-
-                                            {/* 3. Bid Readiness Status (Full Width) */}
-                                            <div className="p-4 bg-slate-50 dark:bg-black rounded-xl border border-slate-200 dark:border-slate-800 md:col-span-2">
-                                                <div className="text-xs text-slate-500 uppercase font-bold">Bid Readiness</div>
-                                                <div className={`text-lg font-bold ${
-                                                    result.bid_readiness_status === 'Auto-Submittable' ? 'text-emerald-500' : 
-                                                    result.bid_readiness_status === 'Requires Management Decision' ? 'text-amber-500' : 'text-red-500'
-                                                }`}>
-                                                    {result.bid_readiness_status || "Pending"}
-                                                </div>
-                                            </div>
-
-                                            {/* Bid Value Display Logic */}
-                                            <div className="p-4 bg-slate-50 dark:bg-black rounded-xl border border-slate-200 dark:border-slate-800 md:col-span-2">
-                                                <div className="text-xs text-slate-500 uppercase font-bold">
-                                                    {result.technical_status === 'Fully Compliant' ? "Total Bid Value" : "Estimated Bid Value (Indicative)"}
-                                                </div>
-                                                <div className="text-2xl font-bold text-slate-900 dark:text-white">
-                                                    {result.total_bid_value ? `$${result.total_bid_value.toLocaleString()}` : "..."}
-                                                </div>
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="col-span-2 hidden"></div>
                                     )}
                                 </div>
+                            </div>
 
+                            {/* Summary Footer with INR */}
+                            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                                <div>
+                                    <div className="text-xs text-slate-500 font-bold uppercase">Estimated Bid Value</div>
+                                    <div className="text-lg font-bold">
+                                        {result.total_bid_value ? `₹${result.total_bid_value.toLocaleString()}` : "..."}
+                                    </div>
+                                </div>
                                 <button 
                                     onClick={handleDownloadPDF}
-                                    className="w-full py-3 bg-slate-900 dark:bg-white text-white dark:text-black font-bold rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                                    className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors flex items-center gap-2"
                                 >
-                                    <FileText className="w-4 h-4" /> Download Final PDF Report
+                                    <FileText className="w-4 h-4" /> Download PDF Report
                                 </button>
                             </div>
                         </motion.div>
@@ -364,6 +381,7 @@ export default function NewRFPAnalysisPage() {
                     )}
                 </div>
             </div>
+            {result && (<VeloraChat rfpText={rfpFullText} agentData={result} />)}
         </div>
     );
 }
