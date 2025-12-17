@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileText, CheckCircle2, AlertTriangle, ArrowRight, Bot, Terminal, Loader2, Search, Brain, Cpu, Calculator, CheckCircle, Package, DollarSign, ListChecks, FileOutput, ShieldCheck, Download, Split, ArrowDownRight, ArrowDownLeft, FileJson, Layers } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { API_BASE_URL } from "@/lib/api";
 import VeloraChat from "../../../components/VeloraChat";
 
@@ -121,6 +122,22 @@ export default function NewRFPAnalysisPage() {
 
     const startAnalysis = async () => {
         if (!file) return;
+
+        // Backend Health Check
+        try {
+            const healthRes = await fetch(`${API_BASE_URL}/health`);
+            if (!healthRes.ok) throw new Error("Backend not healthy");
+        } catch (error) {
+            toast.error("Not connected to backend", {
+                description: "Backend not available due to web scraping is not allowed when hosted online",
+                duration: Infinity,
+                action: {
+                    label: "Retry",
+                    onClick: () => startAnalysis(),
+                },
+            });
+            return;
+        }
 
         setIsAnalyzing(true);
         setLogs([]);
