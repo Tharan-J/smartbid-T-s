@@ -92,8 +92,7 @@ export default function NewRFPAnalysisPage() {
             if (result?.pricing_agent_output || result?.total_bid_value) {
                 setActiveStep(4);
             } else if (result?.technical_agent_output) {
-                if (currentAgent === "pricing_agent") setActiveStep(3);
-                else setActiveStep(2);
+                setActiveStep(2);
             } else {
                 setActiveStep(1);
             }
@@ -131,6 +130,7 @@ export default function NewRFPAnalysisPage() {
             toast.error("Not connected to backend", {
                 description: "Backend not available due to web scraping is not allowed when hosted online",
                 duration: Infinity,
+                closeButton: true,
                 action: {
                     label: "Retry",
                     onClick: () => startAnalysis(),
