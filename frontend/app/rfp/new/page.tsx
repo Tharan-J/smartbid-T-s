@@ -131,6 +131,7 @@ export default function NewRFPAnalysisPage() {
             toast.error("Not connected to backend", {
                 description: "Backend not available due to web scraping is not allowed when hosted online",
                 duration: Infinity,
+                closeButton: true,
                 action: {
                     label: "Retry",
                     onClick: () => startAnalysis(),
